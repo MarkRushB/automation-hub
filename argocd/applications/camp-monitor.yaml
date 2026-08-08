@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: camp-monitor
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:MarkRushB/automation-hub.git
+    targetRevision: main
+    path: apps/camp-monitor/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: camp-monitor
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+

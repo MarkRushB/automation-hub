@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: camp-monitor-config
+data:
+  config.json: |
+    {
+      "campground": "Salisbury Beach State Reservation, MA",
+      "arrival": "2026-08-14",
+      "nights": 2,
+      "site_type": "any",
+      "sites": [],
+      "check_interval_seconds": 900,
+      "jitter_seconds": 120,
+      "max_backoff_seconds": 7200,
+      "bark": {
+        "enabled": true,
+        "server": "https://api.day.app",
+        "level": "active",
+        "group": "Camping"
+      },
+      "webhook_url": "",
+      "email": {"enabled": false}
+    }
+
