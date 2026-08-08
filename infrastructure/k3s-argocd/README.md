@@ -40,6 +40,7 @@ components. Register the private GitHub repository using a read-only SSH deploy
 key, then apply:
 
 ```bash
+sudo kubectl apply -f argocd/projects/camp-monitor.yaml
 sudo kubectl apply -f argocd/applications/camp-monitor.yaml
 ```
 

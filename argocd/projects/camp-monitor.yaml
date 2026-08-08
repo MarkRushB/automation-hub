@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: camp-monitor
+  namespace: argocd
+spec:
+  description: Campsite monitor workloads managed from automation-hub
+  sourceRepos:
+    - git@github.com:MarkRushB/automation-hub.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: camp-monitor
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
