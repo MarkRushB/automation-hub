@@ -17,6 +17,27 @@ spec:
         app.kubernetes.io/name: camp-monitor
     spec:
       terminationGracePeriodSeconds: 30
+      initContainers:
+        - name: install-python-dependencies
+          image: mcr.microsoft.com/playwright/python:v1.54.0-noble
+          command:
+            - python
+            - -m
+            - pip
+            - install
+            - --no-cache-dir
+            - --target=/python-packages
+            - playwright==1.54.0
+          volumeMounts:
+            - name: python-packages
+              mountPath: /python-packages
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
       containers:
         - name: camp-monitor
           image: mcr.microsoft.com/playwright/python:v1.54.0-noble
@@ -24,6 +45,8 @@ spec:
           command: ["python", "/app-src/camp_monitor.py"]
           args: ["--config", "/config/config.json"]
           env:
+            - name: PYTHONPATH
+              value: /python-packages
             - name: BARK_DEVICE_KEY
               valueFrom:
                 secretKeyRef:
@@ -38,6 +61,9 @@ spec:
               readOnly: true
             - name: shared-memory
               mountPath: /dev/shm
+            - name: python-packages
+              mountPath: /python-packages
+              readOnly: true
           resources:
             requests:
               cpu: 100m
@@ -62,4 +88,6 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 256Mi
+        - name: python-packages
+          emptyDir: {}
 

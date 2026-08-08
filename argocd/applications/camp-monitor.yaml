@@ -4,7 +4,7 @@ metadata:
   name: camp-monitor
   namespace: argocd
 spec:
-  project: default
+  project: camp-monitor
   source:
     repoURL: git@github.com:MarkRushB/automation-hub.git
     targetRevision: main

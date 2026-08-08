@@ -19,5 +19,8 @@ kubectl -n camp-monitor create secret generic camp-monitor-secrets \
 Non-secret settings are in `config/config.json`. Commit configuration or Python
 changes to Git and Argo CD will reconcile them. Kustomize injects the script and
 configuration into the public Playwright runtime image as generated ConfigMaps,
-so the cluster does not need credentials for a private container registry.
+so the cluster does not need credentials for a private container registry. An
+initContainer installs the pinned Python package into an ephemeral shared volume
+before the monitor starts; the browser binaries remain supplied by the runtime
+image.
 
