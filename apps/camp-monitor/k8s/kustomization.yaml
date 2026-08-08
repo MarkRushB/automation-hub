@@ -5,5 +5,5 @@ resources:
   - deployment.yaml
 images:
   - name: ghcr.io/markrushb/automation-hub/camp-monitor
-    newTag: latest
+    newTag: e693f47b7ce5ef7b5cf3fce1684e8a3fd30a30bf
 
