@@ -14,19 +14,10 @@ kubectl -n camp-monitor create secret generic camp-monitor-secrets \
   --from-literal=bark-device-key='YOUR_BARK_DEVICE_KEY'
 ```
 
-Because the repository and GHCR package are private, create a classic GitHub
-PAT with `read:packages`, then create the registry pull secret:
-
-```bash
-kubectl -n camp-monitor create secret docker-registry ghcr-pull \
-  --docker-server=ghcr.io \
-  --docker-username='YOUR_GITHUB_USERNAME' \
-  --docker-password='YOUR_GITHUB_PAT'
-```
-
 ## Configuration
 
-Non-secret settings are in `k8s/configmap.yaml`. Commit changes to Git and Argo
-CD will reconcile them. The GitHub workflow builds a SHA-tagged image and
-commits the new tag to `k8s/kustomization.yaml`.
+Non-secret settings are in `config/config.json`. Commit configuration or Python
+changes to Git and Argo CD will reconcile them. Kustomize injects the script and
+configuration into the public Playwright runtime image as generated ConfigMaps,
+so the cluster does not need credentials for a private container registry.
 
