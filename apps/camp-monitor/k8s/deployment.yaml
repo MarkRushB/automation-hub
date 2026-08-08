@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: camp-monitor
+  labels:
+    app.kubernetes.io/name: camp-monitor
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: camp-monitor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: camp-monitor
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: camp-monitor
+          image: ghcr.io/markrushb/automation-hub/camp-monitor
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/config/config.json"]
+          env:
+            - name: BARK_DEVICE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: camp-monitor-secrets
+                  key: bark-device-key
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: camp-monitor-config
+
