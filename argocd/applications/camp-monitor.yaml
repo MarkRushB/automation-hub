@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: git@github.com:MarkRushB/automation-hub.git
     targetRevision: main
-    path: apps/camp-monitor/k8s
+    path: apps/camp-monitor
   destination:
     server: https://kubernetes.default.svc
     namespace: camp-monitor

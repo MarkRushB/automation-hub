@@ -16,13 +16,12 @@ spec:
       labels:
         app.kubernetes.io/name: camp-monitor
     spec:
-      imagePullSecrets:
-        - name: ghcr-pull
       terminationGracePeriodSeconds: 30
       containers:
         - name: camp-monitor
-          image: ghcr.io/markrushb/automation-hub/camp-monitor
+          image: mcr.microsoft.com/playwright/python:v1.54.0-noble
           imagePullPolicy: IfNotPresent
+          command: ["python", "/app-src/camp_monitor.py"]
           args: ["--config", "/config/config.json"]
           env:
             - name: BARK_DEVICE_KEY
@@ -34,13 +33,18 @@ spec:
             - name: config
               mountPath: /config
               readOnly: true
+            - name: source
+              mountPath: /app-src
+              readOnly: true
+            - name: shared-memory
+              mountPath: /dev/shm
           resources:
             requests:
               cpu: 100m
-              memory: 512Mi
+              memory: 256Mi
             limits:
               cpu: "1"
-              memory: 1536Mi
+              memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
@@ -51,4 +55,11 @@ spec:
         - name: config
           configMap:
             name: camp-monitor-config
+        - name: source
+          configMap:
+            name: camp-monitor-source
+        - name: shared-memory
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
 
