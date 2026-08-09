@@ -35,6 +35,22 @@ sudo kubectl apply -n argocd \
 sudo kubectl -n argocd rollout status deployment/argocd-repo-server --timeout=300s
 ```
 
+## Local-only Web UI
+
+Install the Argo CD CLI matching the controller version, then install the
+included `argocd-dashboard.service`. It binds only to `127.0.0.1:8080`; do not
+open port 8080 in the Lightsail firewall.
+
+From Windows, create an SSH tunnel:
+
+```powershell
+ssh -i "C:\path\to\LightsailDefaultKey-us-east-1.pem" `
+  -L 8080:127.0.0.1:8080 ubuntu@SERVER_IP
+```
+
+Keep that terminal open and browse to `http://localhost:8080`. Closing the SSH
+tunnel removes local access but does not stop Argo CD or monitored workloads.
+
 Argo CD Core omits the API server, UI, notifications controller, and SSO
 components. Register the private GitHub repository using a read-only SSH deploy
 key, then apply:

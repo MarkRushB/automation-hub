@@ -1,0 +1,18 @@
+[Unit]
+Description=Local-only Argo CD Core dashboard
+After=k3s.service network-online.target
+Requires=k3s.service
+
+[Service]
+Type=simple
+User=ubuntu
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+ExecStart=/usr/local/bin/argocd admin dashboard --namespace argocd --address 127.0.0.1 --port 8080
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+
