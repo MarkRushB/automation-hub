@@ -1,0 +1,15 @@
+[Unit]
+Description=Mobile campsite monitor status generator
+After=k3s.service network-online.target
+Requires=k3s.service
+
+[Service]
+Type=simple
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+ExecStart=/usr/local/bin/camp-status-generator.py
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

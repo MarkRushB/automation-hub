@@ -50,13 +50,60 @@ BLOCK_PAGE_PHRASES = (
 def load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         cfg = json.load(f)
-    required = ("campground", "arrival", "nights")
-    missing = [key for key in required if not cfg.get(key)]
-    if missing:
-        raise ValueError(f"Missing configuration: {', '.join(missing)}")
-    datetime.strptime(cfg["arrival"], "%Y-%m-%d")
-    if cfg.get("site_type", "any") not in SITE_TYPES:
-        raise ValueError(f"site_type must be one of: {', '.join(SITE_TYPES)}")
+
+    raw_watches = cfg.get("watches")
+    if raw_watches is None:
+        # Keep legacy single-watch configurations working during upgrades.
+        raw_watches = [cfg]
+    if not isinstance(raw_watches, list) or not raw_watches:
+        raise ValueError("watches must be a non-empty list")
+
+    inherited_keys = (
+        "site_type",
+        "sites",
+        "available_text",
+        "unavailable_text",
+    )
+    defaults = {key: cfg[key] for key in inherited_keys if key in cfg}
+    watches = []
+    watch_ids = set()
+    for index, raw_watch in enumerate(raw_watches, start=1):
+        if not isinstance(raw_watch, dict):
+            raise ValueError(f"watch #{index} must be an object")
+        watch = {**defaults, **raw_watch}
+        required = ("campground", "arrival", "nights")
+        missing = [key for key in required if not watch.get(key)]
+        if missing:
+            raise ValueError(
+                f"watch #{index} is missing: {', '.join(missing)}"
+            )
+        datetime.strptime(watch["arrival"], "%Y-%m-%d")
+        watch["nights"] = int(watch["nights"])
+        if watch["nights"] < 1:
+            raise ValueError(f"watch #{index} nights must be at least 1")
+        if watch.get("site_type", "any") not in SITE_TYPES:
+            raise ValueError(f"site_type must be one of: {', '.join(SITE_TYPES)}")
+
+        watch_id = str(watch.get("id", "")).strip().lower()
+        if not watch_id:
+            watch_label = f"{watch['campground']}-{watch['arrival']}".lower()
+            watch_id = re.sub(
+                r"[^a-z0-9]+",
+                "-",
+                watch_label,
+            ).strip("-")
+            watch_id = watch_id[:63]
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", watch_id):
+            raise ValueError(
+                f"watch #{index} id must contain only lowercase letters, numbers, and hyphens"
+            )
+        if watch_id in watch_ids:
+            raise ValueError(f"duplicate watch id: {watch_id}")
+        watch_ids.add(watch_id)
+        watch["id"] = watch_id
+        watches.append(watch)
+
+    cfg["watches"] = watches
     return cfg
 
 
@@ -212,7 +259,7 @@ def notify(cfg: dict, message: str, click_url: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Monitor a Massachusetts campsite")
+    parser = argparse.ArgumentParser(description="Monitor Massachusetts campsites")
     parser.add_argument("-c", "--config", default="config.json")
     parser.add_argument("--once", action="store_true", help="Check once and exit")
     parser.add_argument("--headed", action="store_true", help="Show the browser window")
@@ -220,6 +267,8 @@ def main() -> int:
     args = parser.parse_args()
     cfg = load_config(args.config)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    watches = cfg["watches"]
+    logging.info("configured watches=%d", len(watches))
 
     if args.test_notification:
         notify(cfg, "Campsite monitor test notification", HOME)
@@ -228,44 +277,62 @@ def main() -> int:
 
     interval = max(300, int(cfg.get("check_interval_seconds", 900)))
     jitter = max(0, int(cfg.get("jitter_seconds", 120)))
+    stagger = max(15, int(cfg.get("stagger_seconds", 45)))
     max_backoff = max(interval, int(cfg.get("max_backoff_seconds", 7200)))
-    notified = False
+    notified = {watch["id"]: False for watch in watches}
     consecutive_failures = 0
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=not args.headed)
         page = browser.new_page(locale="en-US")
         while True:
-            try:
-                available, detail, url = check_once(page, cfg)
-                logging.info("available=%s; %s", available, detail)
-                if available and not notified:
-                    notify(
-                        cfg,
-                        f"Campsite may be available: {cfg['campground']}\n"
-                        f"Arrival: {cfg['arrival']}, nights: {cfg['nights']}\n{url}",
+            cycle_started = time.monotonic()
+            successes = 0
+            rate_limited = False
+            for index, watch in enumerate(watches):
+                watch_id = watch["id"]
+                try:
+                    available, detail, url = check_once(page, watch)
+                    logging.info(
+                        "[%s] available=%s; %s; url=%s",
+                        watch_id,
+                        available,
+                        detail,
                         url,
                     )
-                    notified = True
-                elif not available:
-                    notified = False
-                consecutive_failures = 0
-            except RateLimitedError as exc:
-                consecutive_failures += 1
-                logging.warning("%s", exc)
-                if args.once:
-                    browser.close()
-                    return 2
-            except Exception:
-                consecutive_failures += 1
-                logging.exception("Availability check failed")
-                if args.once:
-                    browser.close()
-                    return 2
+                    if available and not notified[watch_id]:
+                        notify(
+                            cfg,
+                            f"Campsite may be available: {watch['campground']}\n"
+                            f"Arrival: {watch['arrival']}, nights: {watch['nights']}\n{url}",
+                            url,
+                        )
+                        notified[watch_id] = True
+                    elif not available:
+                        notified[watch_id] = False
+                    successes += 1
+                except RateLimitedError as exc:
+                    logging.warning("[%s] %s", watch_id, exc)
+                    rate_limited = True
+                    break
+                except Exception:
+                    logging.exception("[%s] availability check failed", watch_id)
+
+                if not args.once and index < len(watches) - 1:
+                    between_checks = stagger + random.randint(0, min(jitter, 30))
+                    logging.info(
+                        "[%s] waiting %d seconds before next watch",
+                        watch_id,
+                        between_checks,
+                    )
+                    time.sleep(between_checks)
 
             if args.once:
-                break
-            if consecutive_failures:
+                browser.close()
+                return 0 if successes == len(watches) else 2
+
+            if rate_limited or successes == 0:
+                consecutive_failures += 1
                 delay = min(
                     max_backoff,
                     interval * (2 ** min(consecutive_failures - 1, 6)),
@@ -277,9 +344,16 @@ def main() -> int:
                     consecutive_failures,
                 )
             else:
-                delay = interval + random.randint(0, jitter)
+                consecutive_failures = 0
+                elapsed = int(time.monotonic() - cycle_started)
+                delay = max(0, interval - elapsed) + random.randint(0, jitter)
+                logging.info(
+                    "cycle complete: successful watches=%d/%d; next cycle in %d seconds",
+                    successes,
+                    len(watches),
+                    delay,
+                )
             time.sleep(delay)
-        browser.close()
     return 0
 
 
