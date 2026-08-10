@@ -46,12 +46,12 @@ function renderWatches(watches){
   if(!watches.length){root.append(el('article','watch','尚未配置监测任务'));return}
   watches.forEach(w=>{
     const card=el('article','watch'),top=el('div','watch-top'),id=el('div','watch-id',w.id||'watch'),badge=el('div','badge');
-    const known=w.available!==null&&w.available!==undefined;
-    badge.textContent=w.available===true?'AVAILABLE':known?'NO OPENINGS':'PENDING';if(w.available===true)badge.classList.add('open');top.append(id,badge);
+    const failed=Boolean(w.last_error),stale=Boolean(w.stale),known=w.available!==null&&w.available!==undefined;
+    badge.textContent=failed?'ERROR':stale?'STALE':w.available===true?'AVAILABLE':known?'NO OPENINGS':'PENDING';if(w.available===true&&!failed&&!stale)badge.classList.add('open');top.append(id,badge);
     const title=el('h3','',w.campground||'Unknown campground'),date=el('div','date',`${w.arrival||'—'} · ${w.nights??'—'} nights`),bottom=el('div','watch-bottom');
-    const result=el('div','result',w.available===true?String(w.available_count??1):known?'0':'—'),small=el('small','',w.available===true?'OPEN SITES':known?'NO MATCHES':'AWAITING CHECK');result.append(small);
+    const result=el('div','result',w.available===true?String(w.available_count??1):known?'0':'—'),small=el('small','',failed?'CHECK FAILED':stale?'RESULT STALE':w.available===true?'OPEN SITES':known?'NO MATCHES':'AWAITING CHECK');result.append(small);
     const book=el('a','book','BOOKING PAGE');book.target='_blank';book.rel='noopener';if(w.booking_url)book.href=w.booking_url;else book.hidden=true;bottom.append(result,book);
-    const last=el('div','last',w.last_check||'No check recorded yet');card.append(top,title,date,bottom,last);root.append(card);
+    const last=el('div','last',w.last_error||w.last_check||'No check recorded yet');card.append(top,title,date,bottom,last);root.append(card);
   });
 }
 async function refresh(){

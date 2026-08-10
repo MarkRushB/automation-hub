@@ -107,6 +107,43 @@ def load_config(path: str) -> dict:
     return cfg
 
 
+def set_arrival_date(page: Page, arrival_date: str) -> None:
+    parsed = datetime.strptime(arrival_date, "%Y-%m-%d")
+    date_value = parsed.strftime("%m/%d/%Y")
+    arrival = page.locator('input[name="campingDate"]')
+    arrival.wait_for(state="attached", timeout=30_000)
+
+    if arrival.is_visible():
+        # Compatibility with the older plain-text date field.
+        arrival.fill(date_value)
+        arrival.evaluate("el => el.dispatchEvent(new Event('change', {bubbles:true}))")
+        return
+
+    # The current site renders campingDate as a hidden field controlled by its
+    # segmented ariaDatePicker. Use the widget so both its UI and callbacks stay
+    # in sync; fall back to setting the form value if the widget is unavailable.
+    arrival.evaluate(
+        """
+        (el, value) => {
+          const [year, month, day] = value.iso.split('-').map(Number);
+          const container = document.querySelector('#arialDateContainer');
+          const picker = container && window.jQuery
+            ? window.jQuery(container).data('ariaDatePicker')
+            : null;
+          if (picker && typeof picker.setValue === 'function') {
+            picker.setValue(new Date(year, month - 1, day));
+          } else {
+            el.value = value.display;
+            el.dispatchEvent(new Event('change', {bubbles: true}));
+          }
+        }
+        """,
+        {"iso": arrival_date, "display": date_value},
+    )
+    if not arrival.input_value():
+        raise RuntimeError("ReserveAmerica date picker did not accept the arrival date")
+
+
 def set_search_fields(page: Page, cfg: dict) -> None:
     response = page.goto(HOME, wait_until="domcontentloaded", timeout=60_000)
     if response and response.status in (403, 429):
@@ -118,10 +155,7 @@ def set_search_fields(page: Page, cfg: dict) -> None:
     page.locator('input[name="locationCriteria"]').fill(cfg["campground"])
     page.locator('input[name="locationPosition"]').evaluate("el => el.value = ''")
 
-    date_value = datetime.strptime(cfg["arrival"], "%Y-%m-%d").strftime("%m/%d/%Y")
-    arrival = page.locator('input[name="campingDate"]')
-    arrival.fill(date_value)
-    arrival.evaluate("el => el.dispatchEvent(new Event('change', {bubbles:true}))")
+    set_arrival_date(page, cfg["arrival"])
 
     nights = page.locator('input[name="lengthOfStay"]')
     nights.evaluate("el => el.disabled = false")

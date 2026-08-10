@@ -1,5 +1,6 @@
 import importlib.util
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 MODULE_PATH = Path(__file__).parents[1] / "camp-status-generator.py"
@@ -43,6 +44,35 @@ class StatusParserTests(unittest.TestCase):
         )[0]
         self.assertTrue(result["available"])
         self.assertEqual(result["available_count"], 3)
+
+    def test_failure_after_success_marks_watch_failed(self):
+        logs = "\n".join([
+            "2026-08-10T07:21:20.000000Z INFO [first] available=False; matching sites available=0; url=https://example.com/a",
+            "2026-08-10T07:37:35.000000Z ERROR [first] availability check failed",
+        ])
+        result = status.parse_watch_results(logs, self.watches[:1])[0]
+        self.assertIsNotNone(result["last_error"])
+
+    def test_success_after_failure_clears_current_error(self):
+        logs = "\n".join([
+            "2026-08-10T07:37:35.000000Z ERROR [first] availability check failed",
+            "2026-08-10T07:40:00.000000Z INFO [first] available=False; matching sites available=0; url=https://example.com/a",
+        ])
+        result = status.parse_watch_results(logs, self.watches[:1])[0]
+        self.assertIsNone(result["last_error"])
+
+    def test_old_success_is_marked_stale_and_not_reported(self):
+        watches = status.parse_watch_results(
+            "2026-08-10T07:00:00.000000Z INFO [first] available=False; matching sites available=0; url=https://example.com/a",
+            self.watches[:1],
+        )
+        status.annotate_freshness(
+            watches,
+            interval_seconds=900,
+            now=datetime(2026, 8, 10, 8, 0, tzinfo=timezone.utc),
+        )
+        self.assertTrue(watches[0]["stale"])
+        self.assertIsNone(watches[0]["available"])
 
 
 if __name__ == "__main__":
