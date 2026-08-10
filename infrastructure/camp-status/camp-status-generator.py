@@ -14,6 +14,7 @@ WATCH_LINE = re.compile(
     r"\[(?P<id>[a-z0-9-]+)] available=(?P<available>True|False);"
     r"(?P<detail>.*?); url=(?P<url>\S+)"
 )
+ERROR_LINE = re.compile(r"\[(?P<id>[a-z0-9-]+)] availability check failed")
 
 
 def run(*args):
@@ -70,11 +71,22 @@ def parse_watch_results(logs, watches):
             "available_count": None,
             "last_check": None,
             "booking_url": None,
+            "last_error": None,
+            "stale": False,
         }
         for watch in watches
     }
+    latest_event_seen = set()
     lines = [line for line in logs.splitlines() if line.strip()]
     for line in reversed(lines):
+        error_match = ERROR_LINE.search(line)
+        if error_match and error_match.group("id") in results:
+            item = results[error_match.group("id")]
+            if error_match.group("id") not in latest_event_seen:
+                latest_event_seen.add(error_match.group("id"))
+                item["last_error"] = line
+            continue
+
         match = WATCH_LINE.search(line)
         if not match or match.group("id") not in results:
             continue
@@ -88,6 +100,9 @@ def parse_watch_results(logs, watches):
             "last_check": line,
             "booking_url": match.group("url"),
         })
+        if match.group("id") not in latest_event_seen:
+            latest_event_seen.add(match.group("id"))
+            item["last_error"] = None
 
     # One-release compatibility for logs produced by the old single-watch monitor.
     if watches and results[watches[0]["id"]]["last_check"] is None:
@@ -103,6 +118,31 @@ def parse_watch_results(logs, watches):
             })
             break
     return list(results.values())
+
+
+def log_timestamp(line):
+    if not line:
+        return None
+    token = line.split(maxsplit=1)[0]
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z", token):
+        return None
+    token = re.sub(r"(\.\d{6})\d+Z$", r"\1Z", token)
+    try:
+        return datetime.fromisoformat(token.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def annotate_freshness(watches, interval_seconds, now=None):
+    now = now or datetime.now(timezone.utc)
+    stale_after = max(int(interval_seconds or 0) * 3, 1800)
+    for watch in watches:
+        checked_at = log_timestamp(watch.get("last_check"))
+        watch["stale"] = checked_at is None or (now - checked_at).total_seconds() > stale_after
+        if watch.get("last_error") or watch["stale"]:
+            watch["available"] = None
+            watch["available_count"] = None
+    return watches
 
 
 def collect():
@@ -137,13 +177,23 @@ def collect():
     argo_sync = app_status.get("sync", {}).get("status", "Unknown")
     argo_health = app_status.get("health", {}).get("status", "Unknown")
     watches = parse_watch_results(logs, configured_watches(config))
-    reporting = sum(watch["available"] is not None for watch in watches)
+    watches = annotate_freshness(watches, config.get("check_interval_seconds", 0))
+    reporting = sum(
+        watch["available"] is not None and not watch["stale"] and not watch["last_error"]
+        for watch in watches
+    )
     available_watches = sum(watch["available"] is True for watch in watches)
     disk = shutil.disk_usage("/")
 
+    infrastructure_healthy = ready and argo_sync == "Synced" and argo_health == "Healthy"
+    monitor_healthy = bool(watches) and reporting == len(watches)
+    unhealthy_watches = [watch["id"] for watch in watches if watch["last_error"] or watch["stale"]]
+    if unhealthy_watches:
+        errors.append("Monitor check failing or stale: " + ", ".join(unhealthy_watches))
+
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "overall": "Normal" if ready and argo_sync == "Synced" and argo_health == "Healthy" else "Check system",
+        "overall": "Normal" if infrastructure_healthy and monitor_healthy else "Check system",
         "pod_phase": pod.get("status", {}).get("phase", "Unknown"),
         "pod_ready": ready,
         "restarts": sum(c.get("restartCount", 0) for c in containers),
