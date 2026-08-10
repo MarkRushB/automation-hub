@@ -9,9 +9,9 @@
       "nights": 2
     }
   ],
-  "check_interval_seconds": 900,
+  "check_interval_seconds": 300,
   "stagger_seconds": 45,
-  "jitter_seconds": 120,
+  "jitter_seconds": 60,
   "max_backoff_seconds": 7200,
   "bark": {
     "enabled": true,
